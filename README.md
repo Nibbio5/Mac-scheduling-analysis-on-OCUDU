@@ -26,26 +26,30 @@ The core of this work lies in the **modification of C++ header files and schedul
 
 The experimental network is configured as a **5G Standalone (SA) Private Network**. The deployment disaggregates the Control/User Plane and is divided into three main segments: the 5G Core Network, the Radio Access Network (gNodeB), and the User Equipments (UEs).
 
-                 +----------------------------------+   
-                 |         5G CORE NETWORK          |
-                 |            (Open5GS)             |
-                 +-----------------+----------------+
-                                   |
-                                   | (S1-MME / NG-C, NG-U)
-                                   |
-                 +-----------------+----------------+
-                 |       RADIO ACCESS NETWORK       |
-                 |    srsRAN (OCUDU Framework)      |
-                 |        Host PC + USRP B210       |
-                 +--------+----------------+--------+
-                          |                |
-            (RF Link Center)               (RF Link Edge)
-                          |                |
-         +----------------+---+        +---+----------------+
-         |     USER EQUIPMENT |        |   USER EQUIPMENT   |
-         |   Quectel 5G Modem |        |   Quectel 5G Modem |
-         |   (Good Condition) |        |   (Cell-Edge/Bad)  |
-         +--------------------+        +--------------------+
+      SCENARIO A: MIXED CONDITIONS                          SCENARIO B: BOTH CELL-CENTER
+      (Cell-Center vs. Cell-Edge)                             (Both in Good Conditions)
+
+       +-----------------------+                             +-----------------------+
+       |    5G CORE NETWORK    |                             |    5G CORE NETWORK    |
+       |       (Open5GS)       |                             |       (Open5GS)       |
+       +-----------+-----------+                             +-----------+-----------+
+                   |                                                     |
+                   | (S1 / NG-C, NG-U)                                   | (S1 / NG-C, NG-U)
+                   |                                                     |
+       +-----------+-----------+                             +-----------+-----------+
+       | RADIO ACCESS NETWORK  |                             | RADIO ACCESS NETWORK  |
+       |  srsRAN (OCUDU Fw)    |                             |  srsRAN (OCUDU Fw)    |
+       |  Host PC + USRP B210  |                             |  Host PC + USRP B210  |
+       +-----+-----------+-----+                             +-----+-----------+-----+
+             |           |                                         |           |
+       (RF Center)   (RF Edge)                               (RF Center)   (RF Center)
+             |           |                                         |           |
+       +-----+----+  +---+------+                            +-----+----+  +---+------+
+       |  UE (Q1) |  |  UE (Q2) |                            |  UE (Q1) |  |  UE (Q2) |
+       | Quectel  |  | Quectel  |                            | Quectel  |  | Quectel  |
+       | (Center) |  |  (Edge)  |                            | (Center) |  | (Center) |
+       +----------+  +----------+                            +----------+  +----------+
+
 
 ### 1. 5G Core Network (5GCN)
 *   **Software Core:** **Open5GS**, an open-source implementation of the 5G Core.
@@ -90,6 +94,61 @@ Instead of measuring end-to-end latency (such as standard ICMP Ping), we record 
     ```
 
 ### 3. Post-Processing & Analysis
-Once the PCAP is saved at the gNodeB, we analyze the raw scheduling data in two steps:
-1.  **Wireshark Filter Analysis:** We use targeted dissectors (such as LTE/NR MAC protocols) to filter queue updates and estimate latency from physical packet timestamps.
-2.  **Automated Parsing:** Using Python scripts paired with `pandas`, we extract the timestamp arrays from the PCAP metadata and correlate them with the real-time WebSocket JSON metrics, producing the final cumulative distribution functions (CDF) and throughput graphs.
+### 1. Throughput & CDF (Cumulative Distribution Function) Computation
+To evaluate how effectively each scheduling policy distributes resources, the Python pipeline calculates and plots the Cumulative Distribution Function (CDF) of the throughput:
+*   **Sliding Window Extraction:** Packets are grouped by their RNTI (`mac-nr.rnti`) and direction (`mac-nr.direction`). The throughput \\(R_i(t)\\) for each user \\(i\\) is calculated over a sliding time window (e.g., \\(100\text{ ms}\\) or \\(1\text{ s}\\)) using the packet lengths.
+*   **Empirical CDF Plotting:** The script computes the CDF of these throughput values. This allows us to easily extract and compare:
+    *   **Average/Peak Throughput:** The median (50th percentile) and peak (95th percentile) performance.
+    *   **Cell-Edge Robustness:** The 5th percentile, which mathematically represents the worst-performing scenario. A higher 5th percentile indicates that the scheduler successfully prevents starvation for users in degraded signal conditions (Cell-Edge).
+
+### 2. BSR Queue Evolution & Transient Analysis
+The Buffer Status Report (BSR) values (ranging from 0 to 255) extracted via `mac-nr.control.bsr.bs-lcg2` are plotted chronologically to visualize MAC-layer queue dynamics:
+*   **Queue Depth Tracking:** The script tracks how the buffer size fluctuates over time. This maps directly to the `pending_bytes` parameter in our modified srsRAN scheduler logic [7].
+*   **Latenza MAC Estimation:** By observing the time it takes for a high BSR index to drop back to zero, we estimate the exact scheduling latency (the time elapsed between a UE requesting uplink resources and the gNodeB granting them).
+*   **Transient & Stress Testing:** The analysis script automatically identifies and highlights critical system transients, such as **RNTI changes / Reconfigurations** (marked with vertical dashed lines on the plots), allowing us to measure the recovery time of each scheduling algorithm under sudden network state changes.
+
+### 3. Quantitative Fairness Evaluation
+Using the final throughput arrays calculated for each active User Equipment (UE), the script computes the **Jain's Fairness Index (JFI)** to mathematically quantify resource equity:
+
+## CDF graphic result 
+![alt text](https://github.com/Nibbio5/Mac-scheduling-analysis-on-OCUDU/blob/main/graphics_generated/cdf_median_uplink_bad_qos.png)
+
+## Experimental Results & Performance Tables
+
+Below are the detailed experimental results and statistics obtained from the physical 5G Standalone network under different scheduling policies (Round Robin, QoS-Aware, Proportional Fair, and Max Throughput).
+
+### 1. Throughput & Fairness Evaluation: High SNR Scenario
+This scenario represents optimal channel quality where both UEs are located near the cell center (high SNR, CQI 13–15). It tests the maximum cell capacity and balanced scheduling behavior.
+
+| Algorithm | UL UE 1 (Mbps) | UL UE 2 (Mbps) | JFI (UL) | DL UE 1 (Mbps) | DL UE 2 (Mbps) | JFI (DL) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **QoS-aware** | 13.15 | 13.15 | 1.000 | 29.25 | 29.25 | 1.000 |
+| **Round Robin (RR)** | 12.73 | 10.94 | 0.994 | 30.22 | 28.05 | 0.998 |
+| **Proportional Fair (PF)** | 8.39 | 9.31 | 0.997 | 29.17 | 20.20 | 0.967 |
+| **Max Throughput (MAX)** | 24.58 | 0.32 | 0.536 | 29.24 | 29.25 | 1.000 |
+
+### 2. Throughput & Fairness Evaluation: Low SNR / Cell-Edge Scenario
+In this scenario, UE 2 was moved far from the gNodeB to simulate a degraded, Cell-Edge link (low SNR, CQI 7–9), evaluating how well the policies prevent starvation for disadvantaged users.
+
+| Algorithm | UL UE 1 (Mbps) | UL UE 2 (Mbps) | JFI (UL) | DL UE 1 (Mbps) | DL UE 2 (Mbps) | JFI (DL) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **QoS-aware** | 10.92 | 5.64 | 0.908 | 20.49 | 10.09 | 0.895 |
+| **Round Robin (RR)** | 11.46 | 8.62 | 0.980 | 30.14 | 9.09 | 0.772 |
+| **Proportional Fair (PF)** | 14.28 | 4.26 | 0.725 | 30.22 | 6.55 | 0.699 |
+| **Max Throughput (MAX)** | 23.02 | 0.60 | 0.528 | 58.21 | 0.03 | 0.502 |
+
+### 3. MAC-Layer Buffer Analytics (BSR Statistics)
+This table summarizes the total BSR control element samples and the average queue size (in bytes) waiting in the devices' transmission buffers during the respective scenarios.
+
+| Algorithm & Scenario | UE 1 Samples | UE 1 Avg BSR (Bytes) | UE 2 Samples | UE 2 Avg BSR (Bytes) |
+| :--- | :---: | :---: | :---: | :---: |
+| **MAX Throughput (High SNR)** | 286 | 665,901.40 | 286 | 3,424.50 |
+| **Proportional Fair (High SNR)** | 296 | 44,194.75 | 295 | 46,045.95 |
+| **QoS-Aware (High SNR)** | 275 | 286,528.40 | 275 | 233,068.00 |
+| **Round Robin (High SNR)** | 296 | 143,821.60 | 297 | 153,464.00 |
+| **Round Robin (Low SNR)** | 308 | 150,559.10 | 308 | 85,559.10 |
+| **QoS-Aware (Low SNR)** | 294 | 76,564.40 | 294 | 39,220.40 |
+| **MAX Throughput (Low SNR)** | 305 | 559,610.50 | 308 | 5,128.10 |
+| **Proportional Fair (Low SNR)** | 296 | 89,974.10 | 295 | 18,332.70 |
+
+
