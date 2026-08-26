@@ -1,6 +1,6 @@
 # Multi-User MAC Scheduling Evaluation and Enhancement in srsRAN 5G Standalone
 
-This repository contains the implementation, experimental configurations, and analysis tools developed for evaluating and enhancing **multi-user MAC scheduling algorithms** within the **srsRAN** 5G Standalone (SA) software suite, focusing on the O-RAN aligned **OCUDU framework**.
+This repository contains the implementation, experimental configurations, and analysis tools developed for evaluating and enhancing **multi-user MAC scheduling algorithms** within the **OCUDU** 5G Standalone (SA) software suite, focusing on the O-RAN aligned **OCUDU framework**.
 
 The project transitionally evaluates how resource allocation policies impact overall network performance under real-world conditions, utilizing a software-defined radio (SDR) testbed.
 
@@ -18,9 +18,9 @@ The core of this work lies in the **modification of C++ header files and schedul
 
 *   **Real Hardware Testbed:** Validation is performed on an end-to-end 5G SA network utilizing an **Ettus USRP B210** as the gNodeB, **Open5GS** as the Core Network, and commercial **Quectel 5G modules** as User Equipments (UEs).
 *   **Realistic Scenario Testing:** Evaluation of scheduling behavior across distinct environment setups, specifically contrasting **Cell-Center scenarios** (high SNR/CQI) with challenging **Cell-Edge scenarios** (low SNR, CQI 5–7).
-*   **Advanced Network Diagnostics:**
+*   **Network Diagnostics:**
     *   **Throughput & Distribution:** Analyzed globally and individually using **Cumulative Distribution Functions (CDF)**.
-    *   **MAC-Layer Latency & Queue Dynamics:** Monitored through **Buffer Status Report (BSR)** evolution over time and post-processed using **Wireshark (PCAP)** packet analysis.
+    *   **Queue Dynamics:** Monitored through **Buffer Status Report (BSR)** evolution over time and post-processed using **gnb console logs** packet analysis.
     *   **Resource Fairness:** Quantified strictly using the standard **Jain's Fairness Index** to evaluate resource distribution equity.
 ## Network Setup & Experimental Testbed
 
@@ -53,22 +53,22 @@ The experimental network is configured as a **5G Standalone (SA) Private Network
 
 ### 1. 5G Core Network (5GCN)
 *   **Software Core:** **Open5GS**, an open-source implementation of the 5G Core.
-*   **Configuration:** Configured with custom Network Slicing (S-NSSAI) and Dedicated APNs. Static routing and NAT are established between the host system and the containerized core.
+*   **Configuration:** Configured with custom Network Slicing (S-NSSAI) and Dedicated APNs. Static routing and NAT are established between the host system and the containerized core. Configurations file are inside the __configuration__ folder.
 
 ### 2. Radio Access Network (gNodeB)
 *   **SDR Frontend:** **Ettus USRP B210** transceiver connected via high-speed USB interface acting as the RF frontend.
 *   **Protocol Stack:** **srsRAN** integrated within the **OCUDU framework**.
-*   **Custom Tuning:** The `gnb.yaml` file was modified to adapt PHY-layer parameters, physical resource blocks (PRBs), and scheduling policies (`scheduler_policy.h`) for multi-user testcases.
+*   **Custom Tuning:** The `gnb.yaml` file (present in the __configuration__ folder) was modified to adapt PHY-layer parameters, physical resource blocks (PRBs), and scheduling policies (`scheduler_policy.h`) for multi-user testcases.
 
 ### 3. User Equipments (UEs) & Traffic Generation
 *   **Devices under Test:** Commercial **Quectel 5G modules** equipped with custom lab SIM cards and connected directly to test laptops.
-*   **Traffic Generator:** **iPerf3** is run on the client laptops to generate synthetic Uplink (UL) and Downlink (DL) traffic flows.
+*   **Traffic Generator:** **iPerf3** is run on the client laptops via UDP mode to generate Uplink (UL) and Downlink (DL) traffic flows.
 *   **Performance Tracking:** 
-    *   **PCAP Logging:** Packet captures (PCAP) are recorded on the gNodeB host PC via Wireshark to accurately estimate MAC-layer scheduling latency.
+    *   **PCAP Logging:** Packet captures (PCAP) are recorded on the gNodeB host PC via Wireshark to accurately estimate throughput.
     *   **Metrics Extraction:** Real-time JSON output metrics are streamed via WebSocket and parsed using **Python and Pandas** to compare the performance profiles of the selected scheduling algorithms.
 ## Data Generation & PCAP Capturing
 
-To evaluate the scheduling performance of each algorithm under realistic conditions, we generate controlled traffic and capture raw packet data directly at the gNodeB interface. This allows us to perform high-resolution diagnostics of throughput, packet queues, and MAC-layer latency.
+To evaluate the scheduling performance of each algorithm under realistic conditions, we generate controlled traffic and capture raw packet data directly at the gNodeB interface. This allows us to perform diagnostics of throughput and packet queues.
 
 ### 1. Synthetic Traffic Generation (iPerf3)
 *   **Traffic Engine:** We utilize **iPerf3** to generate continuous, bidirectional TCP/UDP traffic flows between the client laptops (connected to the Quectel 5G UEs) and the 5G Core Network.
@@ -77,11 +77,8 @@ To evaluate the scheduling performance of each algorithm under realistic conditi
     *   **Downlink (DL) Stress Testing:** Simulating massive streaming/downloads to evaluate how resource blocks are distributed among multiple users under different policies.
 
 ### 2. Packet Capture (PCAP) on the gNodeB Host
-Instead of measuring end-to-end latency (such as standard ICMP Ping), we record **raw packet captures (PCAP format)** directly on the laptop hosting the gNodeB (USRP B210). 
 
-*   **Capture Mechanism:** Wireshark/Tshark is run on the gNodeB host to sniff and save the exact arrival and departure times of packet headers.
-*   **Why Capturing on the gNodeB?** 
-    Questo approccio ci consente di bypassare i tempi morti della rete di trasporto esterna. Possiamo confrontare il timestamp esatto in cui un pacchetto raggiunge l'interfaccia di rete fisica con l'istante in cui lo scheduler MAC assegna effettivamente la "grant" (parola) radio per inviarlo.
+*   **Capture Mechanism:** Wireshark/Tshark is run on the gNodeB host to sniff and save the exact arrival and departure times of packet headers. This happens automatically, if not is required to run the __gnb__ file as administrator. By default the file is saved in the temp folder
 *   **Data Flow:**
     
     ```
@@ -103,15 +100,53 @@ To evaluate how effectively each scheduling policy distributes resources, the Py
 
 ### 2. BSR Queue Evolution & Transient Analysis
 The Buffer Status Report (BSR) values (ranging from 0 to 255) extracted via `mac-nr.control.bsr.bs-lcg2` are plotted chronologically to visualize MAC-layer queue dynamics:
-*   **Queue Depth Tracking:** The script tracks how the buffer size fluctuates over time. This maps directly to the `pending_bytes` parameter in our modified srsRAN scheduler logic [7].
-*   **Latenza MAC Estimation:** By observing the time it takes for a high BSR index to drop back to zero, we estimate the exact scheduling latency (the time elapsed between a UE requesting uplink resources and the gNodeB granting them).
-*   **Transient & Stress Testing:** The analysis script automatically identifies and highlights critical system transients, such as **RNTI changes / Reconfigurations** (marked with vertical dashed lines on the plots), allowing us to measure the recovery time of each scheduling algorithm under sudden network state changes.
+*   **Queue Depth Tracking:** The script tracks how the buffer size fluctuates over time. This maps directly to the `pending_bytes` parameter in our modified srsRAN scheduler logic.
 
 ### 3. Quantitative Fairness Evaluation
 Using the final throughput arrays calculated for each active User Equipment (UE), the script computes the **Jain's Fairness Index (JFI)** to mathematically quantify resource equity:
+$$J(x_1, x_2, \dots, x_n) = \frac{\left( \sum_{i=1}^{n} x_i \right)^2}{n \sum_{i=1}^{n} x_i^2}$$
+
+Where:
+*   **$n$** is the number of active users (in our experimental setup, $n = 2$ for Quectel 1 and Quectel 2).
+*   **$x_i$** represents the throughput (in Mbps) obtained by the $i$-th User Equipment.
+
+#### Interpretation of the Index:
+*   **$J = 1.0$**: **Perfect Fairness**. Resource allocation is completely equal ($x_1 = x_2$).
+*   **$J = 1/n$ ($0.50$ for 2 UEs)**: **Worst-case Fairness (Starvation)**. One user receives all the resources while the other receives near-zero. This is highly visible in our *Max Throughput* scheduler tests under Low SNR conditions, where the index drops to **$0.528$** in Uplink and **$0.502$** in Downlink.
 
 ## CDF graphic result 
 ![alt text](https://github.com/Nibbio5/Mac-scheduling-analysis-on-OCUDU/blob/main/graphics_generated/cdf_median_uplink_bad_qos.png)
+
+## Scheduling Algorithms & Code Implementation
+
+Within the **OCUDU framework**, the gNodeB scheduler is responsible for distributing Physical Resource Blocks (PRBs) to active User Equipments (UEs) in every Transmission Time Interval (TTI). 
+
+This project evaluates and compares four distinct scheduling policies, highlighting the fundamental trade-off between total cell capacity and user fairness:
+
+### 1. Implemented Scheduling Policies
+
+*   **Round Robin (RR) — *Focus: Fairness***  
+    An algorithm that allocates radio resources sequentially and equally among all active UEs, regardless of their channel conditions. It ensures maximum resource equity (Jain's Fairness Index close to $1.0$) but suffers from severe **spectral inefficiency** in mixed channel scenarios (mixed Cell-Center/Cell-Edge).
+*   **Maximum Throughput (MAX) — *Focus: System Capacity***  
+    A channel-aware policy that prioritizes the UE with the highest instantaneous Signal-to-Noise Ratio (SNR) and Channel Quality Indicator (CQI). While maximizing the cumulative cell throughput, it completely ignores disadvantaged users, causing total resource **starvation** for Cell-Edge devices.
+*   **Proportional Fair (PF) — *Focus: Trade-off Balance***  
+    An algorithm designed to balance system throughput and fairness. It assigns resource grants by computing the ratio between the instantaneous supportable rate $R_i(t)$ (derived from CQI) and the historical average throughput $\bar{R}_i(t)$ of each user, offering an elegant compromise.
+*   **QoS-Aware Scheduling — *Focus: Queue Management***  
+    An advanced policy based on Proportional Fair that dynamically adjusts priorities according to the traffic class and buffer requirements. It actively monitors buffer occupancy (Buffer Status Reports) to prioritize users with accumulating data.
+
+---
+
+### 2. srsRAN & OCUDU Code Integration
+
+All scheduling policies in our gNodeB are integrated into the protocol stack by implementing the unified **`scheduler_policy`** C++ interface:
+
+*   **Policy Files (`lib/scheduler/policy`):** Header and implementation files specify how priorities are computed [8]. Any active policy is forced to implement the virtual methods defined in `scheduler_policy.h`:
+    *   `add_ue()` / `rem_ue()`: To register and clean up active devices.
+    *   `compute_ue_dl_priorities()` / `compute_ue_ul_priorities()`: Executed dynamically to calculate the `ue_sched_priority` (as a `double` score) for each UE in queue, checking the `ue_newtx_candidate` struct and its `pending_bytes`.
+    *   `save_dl_newtx_grants()` / `save_ul_newtx_grants()`: Used to feedback the allocated resources to the scheduler, allowing average historical throughput tracking ($\bar{R}_i$).
+*   **Policy Registry (`scheduler_policy_factory.cpp`):**  
+    While OCUDU natively provided the *Round Robin* and *Quality of Service* schedulers, **we successfully expanded the framework** by implementing and registering both a **Pure Proportional Fair** policy and a **Max Throughput** policy. This was achieved through target modifications of the QoS-scheduler codebase to re-configure priority calculations based on CQI and throughput states.
+
 
 ## Experimental Results & Performance Tables
 
