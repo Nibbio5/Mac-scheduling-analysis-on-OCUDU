@@ -2,11 +2,11 @@
 
 This repository contains the implementation, experimental configurations, and analysis tools developed for evaluating and enhancing **multi-user MAC scheduling algorithms** within the **OCUDU** 5G Standalone (SA) software suite, focusing on the O-RAN aligned **OCUDU framework**.
 
-The project transitionally evaluates how resource allocation policies impact overall network performance under real-world conditions, utilizing a software-defined radio (SDR) testbed.
+The project evaluates how resource allocation policies impact overall network performance under real-world conditions, utilizing a software-defined radio (SDR) testbed.
 
 ## Project Overview
 
-The core of this work lies in the **modification of C++ header files and scheduler policy interfaces** (specifically `scheduler_policy.h`) within srsRAN to implement and refine priority-based scheduling logic. The performance of several algorithms is compared, including:
+The core of this work lies in the **modification of C++ header files and scheduler policy interfaces** (specifically `scheduler_policy.h`) within OCUDU to implement and refine priority-based scheduling logic. The performance of several algorithms is compared, including:
 *   **Round Robin (RR)**
 *   **Proportional Fair (PF)**
 *   **Maximum Throughput**
